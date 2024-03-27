@@ -1,0 +1,111 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.2.4'
+	id 'io.spring.dependency-management' version '1.1.4'
+	id 'org.asciidoctor.jvm.convert' version '3.3.2'
+}
+
+group = 'APIManager'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	sourceCompatibility = '17'
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+ext {
+	set('snippetsDir', file("build/generated-snippets"))
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-activemq'
+	implementation 'org.springframework.boot:spring-boot-starter-artemis'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-web-services'
+	implementation 'org.springframework.boot:spring-boot-starter-webflux'
+	compileOnly 'org.projectlombok:lombok'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	annotationProcessor 'org.projectlombok:lombok'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'io.projectreactor:reactor-test'
+	testImplementation 'org.springframework.restdocs:spring-restdocs-mockmvc'
+	testImplementation 'org.springframework.security:spring-security-test'
+}
+
+tasks.named('test') {
+	outputs.dir snippetsDir
+	useJUnitPlatform()
+}
+
+tasks.named('asciidoctor') {
+	inputs.dir snippetsDir
+	dependsOn test
+}
+
+/// Intergrated Build Task (Spring boot + React)
+/// 
+/// Task 흐름
+/// 1) copyReactBuildFiles > buildReact > installReact로 넘어감
+/// 2) 역순으로 react 프로젝트를 build하기 위한 npm 명령어 실행
+/// 3) React 프로젝트의 build 데이터가 /src/main/resources/static/하위로 copy
+/// 4) react 빌드된 내용 기반 jar파일 생성
+/// --> jar 파일 생성 경로 : Spring 프로젝트명/build/libs
+/// ----> 실행 명령어 : java -jar react_toyPJ-0.0.1-SNAPSHOT.jar
+
+def reactDir = "$projectDir/src/main/Frontend/webapp/reactAPIManagerWeb";
+
+sourceSets{
+	main{
+		resources{
+			srcDirs = ["$projectDir/src/main/resources"]
+		}
+	}
+}
+
+processResources{
+	dependsOn "copyReactBuildFiles"
+}
+
+task installReact(type:Exec){
+	workingDir "$reactDir"
+	inputs.dir "$reactDir"
+	group = BasePlugin.BUILD_GROUP
+	
+	if(System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')){
+		commandLine "npm.cmd", "audit", "fix"
+		commandLine 'npm.cmd', 'install'
+	}else{
+		commandLine "npm", "audit", "fix"
+		commandLine 'npm', 'install'
+	}
+}
+
+task buildReact(type:Exec){
+	dependsOn "installReact"
+	workingDir "$reactDir"
+	inputs.dir "$reactDir"
+	group = BasePlugin.BUILD_GROUP
+	
+	if(System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')){
+		commandLine "npm.cmd", "run-script", "build"
+	}else{
+		commandLine "npm", "run-script", "build"
+	}
+}
+
+task copyReactBuildFiles(type:Copy){
+	dependsOn "buildReact"
+	from "$reactDir/build"
+	into "$projectDir/src/main/resources/static"
+}
